@@ -1,13 +1,16 @@
+import OrderLib "mo:core/Order";
+import Nat "mo:core/Nat";
 
 // please do not import any types from your project outside migrations folder here
 // it can lead to bugs when you change those types later, because migration types should not be changed
 // you should also avoid importing these types anywhere in your project directly from here
 // use MigrationTypes.Current property instead
 
-import MapLib "mo:map/Map";
-import SetLib "mo:map/Set";
-import Nat32 "mo:base/Nat32";
-import Result "mo:base/Result";
+import MapLib "mo:core/Map";
+import SetLib "mo:core/Set";
+import ListLib "mo:core/List";
+import Nat32 "mo:core/Nat32";
+import Result "mo:core/Result";
 //todo: switch to mops
 import ICRC7 "mo:icrc7-mo";
 
@@ -15,7 +18,7 @@ module {
 
   public let Map = MapLib;
   public let Set = SetLib;
-  public let Vec = ICRC7.Vec;
+  public let List = ListLib;
 
   public type Value = ICRC7.Value;
 
@@ -297,38 +300,30 @@ module {
     return ICRC7.account_eq(x.1, y.1);
   };
 
-  public func approvalHash32(x : (?Nat, Account)) : Nat32 {
-    var accumulator = switch(x.0){
-      case(null) 3090623 : Nat32;
-      case(?x) Nat32.fromIntWrap(x);
-    };
 
-    accumulator +%= ICRC7.account_hash32(x.1);
-    return accumulator;
+  public func approval_compare(x : (?Nat, Account), y : (?Nat, Account)) : OrderLib.Order {
+    let natCompare = switch(x.0, y.0) {
+      case (null, null) #equal;
+      case (null, ?_) #less;
+      case (?_, null) #greater;
+      case (?a, ?b) Nat.compare(a, b);
+    };
+    if (natCompare != #equal) return natCompare;
+    return ICRC7.ahash(x.1, y.1);
   };
 
-  public let apphash = ( approvalHash32, approvalEquals);
+  public let apphash = approval_compare;
 
-  public func nullNatEquals(x: ?Nat, y: ?Nat) : Bool{
+  public func nullnat_compare(x : ?Nat, y : ?Nat) : OrderLib.Order {
     switch(x, y){
-      case(null, null) return true;
-      case(?x,?y){
-        if(x!=y) return false
-        else return true;
-      };
-      case(_,_) return false;
+      case(null, null) return #equal;
+      case(null, ?_) return #less;
+      case(?_, null) return #greater;
+      case(?a, ?b) return Nat.compare(a, b);
     };
   };
 
-  public func nullNatHash32(x : ?Nat) : Nat32 {
-    var accumulator = switch(x){
-      case(null) 3035684 : Nat32;
-      case(?x) Nat32.fromIntWrap(x);
-    };
-    return accumulator;
-  };
-
-  public let nullnathash = (nullNatHash32, nullNatEquals);
+  public let nullnathash = nullnat_compare;
 
   public type TokenApprovedListener = ( approval: TokenApprovalNotification, trxid: Nat) -> ();
   public type CollectionApprovedListener = (approval: CollectionApprovalNotification, trxid: Nat) -> ();

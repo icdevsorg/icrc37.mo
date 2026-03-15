@@ -2,9 +2,9 @@ import ICRC37 "../src";
 import Service "../src/service";
 import ICRC7 "../../icrc7.mo/src";
 import Principal "mo:base/Principal";
-import CandyTypesLib "mo:candy_0_3_0/types";
-import CandyConv  "mo:candy_0_3_0/conversion";
-import Properties "mo:candy_0_3_0/properties";
+import CandyTypesLib "mo:candy/types";
+import CandyConv  "mo:candy/conversion";
+import Properties "mo:candy/properties";
 import Array "mo:base/Array";
 import Blob "mo:base/Blob";
 import Int "mo:base/Int";
@@ -130,7 +130,7 @@ func storageChangeICRC7(state : ICRC7.State) : (){
 
 func getICRC7Class<system>(args: ICRC7.InitArgs) : ICRC7.ICRC7 {
   let manager = ClassPlusLib.ClassPlusInitializationManager(testOwner, get_canister(), false);
-  let aClass = ICRC7.Init<system>({
+  let aClass = ICRC7.Init({
     manager = manager;
     initialState = ICRC7.initialState();
     args = args;
@@ -180,8 +180,8 @@ func storageChangeICRC37(state : ICRC37.State) : (){
 
 func getICRC37Class<system>(args: ICRC37.InitArgs, icrc7 : ICRC7.ICRC7) : ICRC37.ICRC37 {
   let manager = ClassPlusLib.ClassPlusInitializationManager(testOwner, get_canister(), false);
-  let aClass = ICRC37.Init<system>({
-    manager = manager;
+  let aClass = ICRC37.Init({
+    org_icdevs_class_plus_manager = manager;
     initialState = ICRC37.initialState();
     args = args;
     pullEnvironment =  ?get_icrc37_environment(icrc7);
@@ -857,6 +857,7 @@ testsys<system>("Clean up should limit number of approvals and log transactions"
   };
 
   assert(icrc37.is_approved([{spender; from_subaccount = null; token_id = 0;}])[0] == false);
+  D.print("Wait: is token 1 approved? " # debug_show(icrc37.is_approved([{spender; from_subaccount = null; token_id = 1;}])[0]));
   assert(icrc37.is_approved([{spender; from_subaccount = null; token_id = 1;}])[0] == false);
   assert(icrc37.is_approved([{spender; from_subaccount = null; token_id = 2;}])[0] == false);
   assert(icrc37.is_approved([{spender; from_subaccount = null; token_id = 3;}])[0] == false);

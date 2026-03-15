@@ -1,0 +1,10 @@
+import Map "mo:core/Map";
+import OrderLib "mo:core/Order";
+import Principal "mo:core/Principal";
+type Account = { owner : Principal; subaccount : ?Blob };
+type ApprovalInfo = { spender : Account };
+let apphash : ((?Nat, Account), (?Nat, Account)) -> OrderLib.Order = func(x,y) = #equal;
+let map : Map.Map<(?Nat, Account), ApprovalInfo> = Map.empty();
+let token_id : ?Nat = null;
+let approval : ApprovalInfo = {spender = {owner=Principal.fromText("aaaaa-aa"); subaccount=null}};
+ignore Map.add<(?Nat, Account), ApprovalInfo>(map, apphash, (token_id, approval.spender), approval);

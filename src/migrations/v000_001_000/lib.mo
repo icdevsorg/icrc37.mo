@@ -1,9 +1,8 @@
 import MigrationTypes "../types";
 import v0_1_0 "types";
 
-import Map "mo:map9/Map";
-import Set "mo:map9/Set";
-import Vec "mo:vector";
+import Map "mo:core/Map";
+import Set "mo:core/Set";
 
 module {
   public func upgrade(prevmigration_state: MigrationTypes.State, args: MigrationTypes.Args, caller: Principal, canister: Principal): MigrationTypes.State {
@@ -54,10 +53,10 @@ module {
         var collection_approval_requires_token = ledger_info.collection_approval_requires_token;
       };
       
-      token_approvals : Map.Map<(?Nat, v0_1_0.Account), v0_1_0.ApprovalInfo> = Map.new<(?Nat, v0_1_0.Account), v0_1_0.ApprovalInfo>();
+      token_approvals : Map.Map<(?Nat, v0_1_0.Account), v0_1_0.ApprovalInfo> = Map.empty<(?Nat, v0_1_0.Account), v0_1_0.ApprovalInfo>();
       indexes = {
-        token_to_approval_account : Map.Map<?Nat, Set.Set<v0_1_0.Account>> = Map.new<?Nat, Set.Set<v0_1_0.Account>>();
-        owner_to_approval_account : Map.Map<v0_1_0.Account, Set.Set<(?Nat, v0_1_0.Account)>> = Map.new<v0_1_0.Account, Set.Set<(?Nat, v0_1_0.Account)>>();
+        token_to_approval_account : Map.Map<?Nat, Set.Set<v0_1_0.Account>> = Map.empty<?Nat, Set.Set<v0_1_0.Account>>();
+        owner_to_approval_account : Map.Map<v0_1_0.Account, Set.Set<(?Nat, v0_1_0.Account)>> = Map.empty<v0_1_0.Account, Set.Set<(?Nat, v0_1_0.Account)>>();
       };
     };
 
