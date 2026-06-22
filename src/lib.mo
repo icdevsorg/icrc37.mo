@@ -20,6 +20,9 @@ import RepIndy "mo:rep-indy-hash";
 import ICRC7 "mo:icrc7-mo";
 import ServiceLib "service";
 import ClassPlusLib "mo:class-plus";
+import Inspect "./Inspect";
+import InterfaceLib "./Interface";
+import PrincipalLib "mo:core/Principal";
 
 module {
 
@@ -109,8 +112,9 @@ module {
   public type TransferFromListener =              MigrationTypes.Current.TransferFromListener;
 
   public let Service = ServiceLib;
+  public let Interface = InterfaceLib;
 
-  let default_take = 10000;
+  let _default_take = 10000;
 
   /// Function to create an initial state for the Approval ICRC37 management.
   public func initialState() : State {#v0_0_0(#data)};
@@ -150,7 +154,7 @@ module {
   public func collectionRevokeIsInFuture(result : RevokeCollectionApprovalResult) : Bool{
     
       switch(result){
-        case(#Err(#CreatedInFuture(err))){
+          case(#Err(#CreatedInFuture(_err))){
            return true;
         };
         case(_){};
@@ -163,7 +167,7 @@ module {
   public func tokenRevokeIsInFuture(result : RevokeTokenApprovalResult) : Bool{
     
       switch(result){
-        case(#Err(#CreatedInFuture(val))){
+        case(#Err(#CreatedInFuture(_val))){
           return true;
         };
         case(_){};
@@ -180,6 +184,26 @@ module {
 
   public func ClassPlusGetter(item: ?ClassPlus) : () -> ICRC37 {
     ClassPlusLib.ClassPlusGetter<ICRC37, State, InitArgs, Environment>(item);
+  };
+
+  public type MixinFunctionArgs = {
+    org_icdevs_class_plus_manager: ClassPlusLib.ClassPlusInitializationManager;
+    initialState: ?State;
+    args : ?InitArgList;
+    pullEnvironment : ?(() -> Environment);
+    onInitialize: ?(ICRC37 -> async*());
+    onStorageChange : ?((State) ->());
+  };
+
+  public func defaultMixinArgs(manager: ClassPlusLib.ClassPlusInitializationManager) : MixinFunctionArgs {
+    {
+      org_icdevs_class_plus_manager = manager;
+      initialState = null;
+      args = null;
+      pullEnvironment = null;
+      onInitialize = null;
+      onStorageChange = null;
+    };
   };
 
   public func Init(config : {
@@ -233,14 +257,27 @@ module {
       case(null) Runtime.trap("No Environment Set");
     };
 
-    var state : CurrentState = switch(stored){
+    private func inspectConfig(maxBatchSize : Nat) : Inspect.Config {
+      {
+        maxMemoSize = environment.icrc7.get_ledger_info().max_memo_size;
+        maxSubaccountSize = 32;
+        maxBatchSize = maxBatchSize;
+        maxRawArgSize = Inspect.defaultConfig.maxRawArgSize;
+      };
+    };
+
+    let state : CurrentState = switch(stored){
       case(null) {
-        let #v0_1_0(#data(foundState)) = init(initialState(),currentStateVersion, args, caller, canisterId);
-        foundState;
+        switch (init(initialState(), currentStateVersion, args, caller, canisterId)) {
+          case (#v0_1_0(#data(foundState))) { foundState };
+          case (_) { Runtime.trap("unexpected icrc37 migration state") };
+        };
       };
       case(?val) {
-        let #v0_1_0(#data(foundState)) = init(val,currentStateVersion, args, caller, canisterId);
-        foundState;
+        switch (init(val, currentStateVersion, args, caller, canisterId)) {
+          case (#v0_1_0(#data(foundState))) { foundState };
+          case (_) { Runtime.trap("unexpected icrc37 migration state") };
+        };
       };
     };
 
@@ -251,9 +288,19 @@ module {
      private let token_revoked_listeners = List.empty<(Text, TokenApprovalRevokedListener)>();
     private let collection_revoked_listeners = List.empty<(Text, CollectionApprovalRevokedListener)>();
     private let transfer_from_listeners = List.empty<(Text, TransferFromListener)>();
+    private let anonymousCaller = PrincipalLib.fromText("2vxsx-fae");
+    private var interfaceHandlers : InterfaceLib.Handlers = Interface.defaultHandlers;
 
     public let migrate = Migration.migrate;
     public let TokenErrorToCollectionError = MigrationTypes.Current.TokenErrorToCollectionError;
+
+    public func get_interface_handlers() : InterfaceLib.Handlers {
+      interfaceHandlers;
+    };
+
+    public func set_interface_handlers(handlers : InterfaceLib.Handlers) : () {
+      interfaceHandlers := handlers;
+    };
 
     // queries
 
@@ -295,7 +342,7 @@ module {
     };
 
     /// Returns true if an active approval exists that allows the spender to transfer the token token_id from the given from_subaccount, false otherwise.
-    public  func is_approved(requests: [Service.IsApprovedArg]) : [Bool] {
+    private func is_approved_core(requests: [Service.IsApprovedArg]) : [Bool] {
       let results = List.empty<Bool>();
       label proc for(thisRequest in requests.vals()){
        
@@ -329,8 +376,30 @@ module {
       return List.toArray(results);
     };
 
+    public func is_approved_with_caller(caller : Principal, requests: [Service.IsApprovedArg]) : [Bool] {
+      Inspect.guardIsApproved(requests, ?inspectConfig(environment.icrc7.get_ledger_info().max_query_batch_size));
+      switch (Interface.executeIsApproved<[Bool]>(
+        caller,
+        requests,
+        interfaceHandlers,
+        func(_caller, handledRequests) {
+          #ok(is_approved_core(handledRequests));
+        },
+        func(_err) { [] },
+        func(res) { res },
+      )) {
+        case (#ok(val)) val;
+        case (#err(err)) Runtime.trap("is_approved hook failed: " # err.message);
+      };
+    };
+
+    public func is_approved(requests: [Service.IsApprovedArg]) : [Bool] {
+      is_approved_with_caller(anonymousCaller, requests);
+    };
+
     /// Returns the token-level approvals that exist for the given vector of token_ids. The result is paginated, the mechanics of pagination are analogous to icrc7_tokens using prev and take to control pagination, with prev being of type TokenApproval. Note that take refers to the number of returned elements to be requested. The prev parameter is a TokenApproval element with the meaning that TokenApprovals following the provided one are returned, based on a sorting order over TokenApprovals implemented by the ledger.
     public func get_token_approvals(token_ids : [Nat], prev: ?Service.TokenApproval, take: ?Nat) : [Service.TokenApproval] {
+      Inspect.guardGetTokenApprovals(token_ids, ?inspectConfig(environment.icrc7.get_ledger_info().max_query_batch_size));
       switch (get_approvals(token_ids, prev, take)) {
         case (#ok(val)) val;
         case (#err(err)) Runtime.trap(err);
@@ -349,29 +418,70 @@ module {
 
     /// Transfers one or more tokens from the from account to the to account. The transfer can be initiated by the holder of the tokens (the holder has an implicit approval for acting on all their tokens on their own behalf) or a party that has been authorized by the holder to execute transfers using ICRC37_approve_tokens or ICRC37_approve_collection. The spender_subaccount is used to identify the spender. The spender is an account comprised of the principal calling this method and the parameter spender_subaccount. Omitting the spender_subaccount means using the default subaccount.
     public func transfer_from<system>(caller : Principal, args : [Service.TransferFromArg]) : [?Service.TransferFromResult] {
-      switch (transfer<system>(caller, args)) {
+      Inspect.guardTransferFrom(args, ?inspectConfig(environment.icrc7.get_ledger_info().max_update_batch_size));
+      let handledArgs = switch (interfaceHandlers.beforeTransferFrom) {
+        case (null) args;
+        case (?handler) {
+          switch (handler(caller, #transfer_from(args))) {
+            case (#ok(#transfer_from(updatedArgs))) updatedArgs;
+            case (#ok(_)) Runtime.trap("Invalid request cast");
+            case (#err(err)) return [?#Err(#GenericBatchError(err))];
+          };
+        };
+      };
+      let result = switch (transfer<system>(caller, handledArgs)) {
         case (#ok(val)) val;
         case (#err(err)) Runtime.trap(err);
+      };
+      switch (interfaceHandlers.afterTransferFrom) {
+        case (null) result;
+        case (?handler) {
+          switch (handler(caller, #transfer_from(handledArgs), #transfer_from(result))) {
+            case (#ok(#transfer_from(updatedResult))) updatedResult;
+            case (#ok(_)) Runtime.trap("Invalid result cast");
+            case (#err(err)) [?#Err(#GenericBatchError(err))];
+          };
+        };
       };
     };
 
     /// Entitles a spender, indicated through an Account, to transfer NFTs on behalf of the caller of this method from account { owner = caller; subaccount = from_subaccount }, where caller is the caller of this method (and also the owner principal of the tokens that are subject to approval) and from_subaccount is the subaccount of the token owner principal the approval should apply to (i.e., the subaccount which the tokens must be held on and can be transferred out from). Note that the from_subaccount parameter needs to be explicitly specified because accounts are a primary concept in this standard and thereby the from_subaccount needs to be specified as part of the account that holds the token. The expires_at value specifies the expiration date of the approval, the memo parameter is an arbitrary blob that is not interpreted by the ledger. The created_at_time field specifies when the approval has been created. The parameter token_ids specifies a batch of tokens to apply the approval to.
     public func approve_tokens<system>(caller : Principal, approval: [Service.ApproveTokenArg]) : [?Service.ApproveTokenResult] {
-      switch (approve_transfers<system>(caller, approval)) {
+      Inspect.guardApproveTokens(approval, ?inspectConfig(environment.icrc7.get_ledger_info().max_update_batch_size));
+      let handledApproval = switch (interfaceHandlers.beforeApproveTokens) {
+        case (null) approval;
+        case (?handler) {
+          switch (handler(caller, #approve_tokens(approval))) {
+            case (#ok(#approve_tokens(updatedApproval))) updatedApproval;
+            case (#ok(_)) Runtime.trap("Invalid request cast");
+            case (#err(err)) return [?#Err(#GenericBatchError(err))];
+          };
+        };
+      };
+      let result = switch (approve_transfers<system>(caller, handledApproval)) {
         case (#ok(val)) val;
         case (#err(err)) Runtime.trap(err);
+      };
+      switch (interfaceHandlers.afterApproveTokens) {
+        case (null) result;
+        case (?handler) {
+          switch (handler(caller, #approve_tokens(handledApproval), #approve_tokens(result))) {
+            case (#ok(#approve_tokens(updatedResult))) updatedResult;
+            case (#ok(_)) Runtime.trap("Invalid result cast");
+            case (#err(err)) [?#Err(#GenericBatchError(err))];
+          };
+        };
       };
     };
 
     /// Entitles a spender, indicated through an Account, to transfer any NFT of the collection hosted on this ledger and owned by the caller at the time of transfer on behalf of the caller of this method from account { owner = caller; subaccount = from_subaccount }, where caller is the caller of this method and from_subaccount is the subaccount of the token owner principal the approval should apply to (i.e., the subaccount which tokens the approval should apply to must be held on and can be transferred out from). Note that the from_subaccount parameter needs to be explicitly specified not only because accounts are a primary concept in this standard, but also because the approval applies to the collection, i.e., all tokens on the ledger the caller holds, and those tokens may be held on different subaccounts. The expires_at value specifies the expiration date of the approval, the memo parameter is an arbitrary blob that is not interpreted by the ledger. The created_at_time field specifies when the approval has been created.
-    public func approve_collection<system>(caller: Principal, approvals : [Service.ApproveCollectionArg]) : [?Service.ApproveCollectionResult] {
-
+    private func approve_collection_core<system>(caller: Principal, approvals : [Service.ApproveCollectionArg]) : [?Service.ApproveCollectionResult] {
       let results = List.empty<?ApproveCollectionResult>();
 
       for(thisApproval in approvals.vals()){
         let thisResult = switch (approve_collection_transfer<system>(caller, thisApproval)) {
           case (#ok(val)) val;
-          case (#err(err)) null;
+          case (#err(_err)) null;
         };
 
         let translation = switch (thisResult) {
@@ -389,11 +499,57 @@ module {
       return List.toArray(results);
     };
 
+    public func approve_collection<system>(caller: Principal, approvals : [Service.ApproveCollectionArg]) : [?Service.ApproveCollectionResult] {
+      Inspect.guardApproveCollection(approvals, ?inspectConfig(environment.icrc7.get_ledger_info().max_update_batch_size));
+      let handledApprovals = switch (interfaceHandlers.beforeApproveCollection) {
+        case (null) approvals;
+        case (?handler) {
+          switch (handler(caller, #approve_collection(approvals))) {
+            case (#ok(#approve_collection(updatedApprovals))) updatedApprovals;
+            case (#ok(_)) Runtime.trap("Invalid request cast");
+            case (#err(err)) return [?#Err(#GenericBatchError(err))];
+          };
+        };
+      };
+      let result = approve_collection_core<system>(caller, handledApprovals);
+      switch (interfaceHandlers.afterApproveCollection) {
+        case (null) result;
+        case (?handler) {
+          switch (handler(caller, #approve_collection(handledApprovals), #approve_collection(result))) {
+            case (#ok(#approve_collection(updatedResult))) updatedResult;
+            case (#ok(_)) Runtime.trap("Invalid result cast");
+            case (#err(err)) [?#Err(#GenericBatchError(err))];
+          };
+        };
+      };
+    };
+
     /// Revokes the specified approvals for tokens given by token_ids from the set of active approvals. The from_subaccount parameter specifies the token owner's subaccount to which the approval applies, the spender the party for which the approval is to be revoked. A null value of from_subaccount indicates the default subaccount. A null value for spender means to revoke approvals with any value for the spender.
     public func revoke_token_approvals<system>(caller : Principal, args : [Service.RevokeTokenApprovalArg]) : [?Service.RevokeTokenApprovalResult] {
-      switch (revoke_tokens<system>(caller, args)) {
+      Inspect.guardRevokeTokenApprovals(args, ?inspectConfig(state.ledger_info.max_revoke_approvals));
+      let handledArgs = switch (interfaceHandlers.beforeRevokeTokenApprovals) {
+        case (null) args;
+        case (?handler) {
+          switch (handler(caller, #revoke_token_approvals(args))) {
+            case (#ok(#revoke_token_approvals(updatedArgs))) updatedArgs;
+            case (#ok(_)) Runtime.trap("Invalid request cast");
+            case (#err(err)) return [?#Err(#GenericBatchError(err))];
+          };
+        };
+      };
+      let result = switch (revoke_tokens<system>(caller, handledArgs)) {
         case (#ok(val)) val;
         case (#err(err)) Runtime.trap(err);
+      };
+      switch (interfaceHandlers.afterRevokeTokenApprovals) {
+        case (null) result;
+        case (?handler) {
+          switch (handler(caller, #revoke_token_approvals(handledArgs), #revoke_token_approvals(result))) {
+            case (#ok(#revoke_token_approvals(updatedResult))) updatedResult;
+            case (#ok(_)) Runtime.trap("Invalid result cast");
+            case (#err(err)) [?#Err(#GenericBatchError(err))];
+          };
+        };
       };
     };
 
@@ -424,7 +580,7 @@ module {
     public func approve_transfers<system>(caller: Principal, approval: [Service.ApproveTokenArg]) : Result.Result<[?ApproveTokenResult], Text> {
 
       //check that the batch isn't too big
-      let safe_batch_size = environment.icrc7.get_ledger_info().max_update_batch_size;
+      let _safe_batch_size = environment.icrc7.get_ledger_info().max_update_batch_size;
 
        
 
@@ -436,13 +592,13 @@ module {
       
       label proc for(thisItem in approval.vals()){ 
         //test that the memo is not too large
-        let ?(memo) = testMemo(thisItem.approval_info.memo) else {
+        let ?(_memo) = testMemo(thisItem.approval_info.memo) else {
           List.add(results, ?#Err(#GenericBatchError({message = "invalid memo. must be less than " # debug_show(environment.icrc7.get_ledger_info().max_memo_size) # " bits"; error_code = 111})));
           return #ok(List.toArray<?ApproveTokenResult>(results));
         };
 
         //test that the expires is not in the past
-        let ?(expires_at) = testExpiresAt(thisItem.approval_info.expires_at) else {
+        let ?(_expires_at) = testExpiresAt(thisItem.approval_info.expires_at) else {
           List.add(results, ?#Err(#GenericError({message = "already expired"; error_code = 1112})));
           continue proc;
         };
@@ -468,20 +624,20 @@ module {
         };
 
         //make sure the approval is not too old or too far in the future
-        let created_at_time = switch(testCreatedAt(thisItem.approval_info.created_at_time, environment)){
+        let _created_at_time = switch(testCreatedAt(thisItem.approval_info.created_at_time, environment)){
           case(#ok(val)) val;
           case(#Err(#TooOld)) {
             List.add(results, ?#Err(#TooOld));
             continue proc;
           };
-          case(#Err(#InTheFuture(val))){
+          case(#Err(#InTheFuture(_val))){
             List.add(results, ?#Err(#CreatedInFuture({ledger_time = Nat64.fromNat(Int.abs(Time.now()))})));
             continue proc;
           };
         };
 
         switch(environment.icrc7.get_nft(thisItem.token_id)){
-          case(?val) {};
+          case(?_val) {};
           case(null){
             List.add(results, ?#Err(#NonExistingTokenId));
             continue proc;
@@ -576,7 +732,7 @@ module {
       //sort the tokenIDs
       let sorted_tokens = Array.sort<Nat>(token_ids, Nat.compare);
 
-      var tracker = 0;
+      var _tracker = 0;
       var bFound = switch(prev){
         case(null) true;
         case(?val) false;
@@ -595,7 +751,7 @@ module {
 
       let default_take_value = environment.icrc7.get_ledger_info().default_take_value;
 
-      var targetCount = switch(take){
+      let targetCount = switch(take){
         case(?val) val;
         case(null) default_take_value;
       };
@@ -670,7 +826,7 @@ module {
 
       let default_take_value = environment.icrc7.get_ledger_info().default_take_value;
 
-      var targetCount = switch(take){
+      let targetCount = switch(take){
         case(?val) val;
         case(null) default_take_value;
       };
@@ -936,10 +1092,7 @@ module {
     ///     - caller: `Principal` - The principal of the user initiating the revoke action.
     ///     - revokeArg: `RevokeCollectionApprovalArg` - The arguments specifying the revoke action details.
     /// - Returns: `[RevokeCollectionApprovalResult]` - A list of response items for each revoke action taken.
-    public func revoke_collection_approvals<system>(caller : Principal, revokeArgs : [RevokeCollectionApprovalArg]) : [?RevokeCollectionApprovalResult] {
-
-
-
+    private func revoke_collection_approvals_core<system>(caller : Principal, revokeArgs : [RevokeCollectionApprovalArg]) : [?RevokeCollectionApprovalResult] {
       let list = List.empty<?RevokeCollectionApprovalResult>();
 
       
@@ -1004,7 +1157,7 @@ module {
           };
         };
 
-        let result = revoke_approvals(null, notification.spender, notification.from.subaccount, null);
+        let _result = revoke_approvals(null, notification.spender, notification.from.subaccount, ?notification.from);
 
          //implment ledger;
         let transaction_id = switch(environment.icrc7.get_environment().add_ledger_transaction){
@@ -1028,6 +1181,31 @@ module {
       };
 
       return List.toArray(list);
+    };
+
+    public func revoke_collection_approvals<system>(caller : Principal, revokeArgs : [RevokeCollectionApprovalArg]) : [?RevokeCollectionApprovalResult] {
+      Inspect.guardRevokeCollectionApprovals(revokeArgs, ?inspectConfig(state.ledger_info.max_revoke_approvals));
+      let handledArgs = switch (interfaceHandlers.beforeRevokeCollectionApprovals) {
+        case (null) revokeArgs;
+        case (?handler) {
+          switch (handler(caller, #revoke_collection_approvals(revokeArgs))) {
+            case (#ok(#revoke_collection_approvals(updatedArgs))) updatedArgs;
+            case (#ok(_)) Runtime.trap("Invalid request cast");
+            case (#err(err)) return [?#Err(#GenericBatchError(err))];
+          };
+        };
+      };
+      let result = revoke_collection_approvals_core<system>(caller, handledArgs);
+      switch (interfaceHandlers.afterRevokeCollectionApprovals) {
+        case (null) result;
+        case (?handler) {
+          switch (handler(caller, #revoke_collection_approvals(handledArgs), #revoke_collection_approvals(result))) {
+            case (#ok(#revoke_collection_approvals(updatedResult))) updatedResult;
+            case (#ok(_)) Runtime.trap("Invalid result cast");
+            case (#err(err)) [?#Err(#GenericBatchError(err))];
+          };
+        };
+      };
     };
 
     /// Revokes a single token transfer approval
@@ -1119,7 +1297,7 @@ module {
           case(?val) val<system>(finaltx, finaltxtop);
         };
 
-        let result = revoke_approvals(?notification.token_id, notification.spender, notification.from.subaccount, ?owner);
+        let _result = revoke_approvals(?notification.token_id, notification.spender, notification.from.subaccount, ?owner);
 
         for(thisEvent in List.values(token_revoked_listeners)){
           thisEvent.1(notification, transaction_id);
@@ -1139,6 +1317,18 @@ module {
 
       let spenders = List.empty<Account>();
 
+      func owner_has_approval(owner : Account, approval_key : (?Nat, Account)) : Bool {
+        switch(Map.get(state.indexes.owner_to_approval_account, ahash, owner)){
+          case(null) false;
+          case(?set){
+            label search for(entry in Set.values<(?Nat, Account)>(set)){
+              if(entry == approval_key) return true;
+            };
+            false;
+          };
+        };
+      };
+
       //clean up owner index
 
       switch(Map.get(state.indexes.token_to_approval_account, nullnathash, token_id)){
@@ -1148,6 +1338,13 @@ module {
               //remove them all
              
               label proc for(thisItem in Set.values<Account>(idx)){
+                switch(former_owner){
+                  case(null){};
+                  case(?owner){
+                    if(not owner_has_approval(owner, (token_id, thisItem))) continue proc;
+                  };
+                };
+
                 switch(from_subaccount){
                   case(?val){
                     let ?rec = Map.get<(?Nat,Account), ApprovalInfo>(state.token_approvals, apphash, (token_id, thisItem)) else return Runtime.trap("unreachable");
@@ -1181,6 +1378,13 @@ module {
               };
             };
             case(?val){
+              switch(former_owner){
+                case(null){};
+                case(?owner){
+                  if(not owner_has_approval(owner, (token_id, val))) return [];
+                };
+              };
+
               switch(from_subaccount){
                 case(?from_subaccount){
                   let ?rec = Map.get<(?Nat,Account), ApprovalInfo>(state.token_approvals, apphash, (token_id, val)) else return [];
@@ -1546,17 +1750,25 @@ module {
 
       switch(token_id){
         case(null){
-          let ?thisNotification = collectionNotification;
-          for(thisEvent in List.values(collection_approved_listeners)){
-            thisEvent.1(thisNotification, transaction_id);
+          switch (collectionNotification) {
+            case (?thisNotification) {
+              for(thisEvent in List.values(collection_approved_listeners)){
+                thisEvent.1(thisNotification, transaction_id);
+              };
+            };
+            case (null) {};
           };
         };
         case(?token_id)
         {
-          let ?thisNotification = tokenNotification;
-          for(thisEvent in List.values(token_approved_listeners)){
-            thisEvent.1(thisNotification, transaction_id);
-        };
+          switch (tokenNotification) {
+            case (?thisNotification) {
+              for(thisEvent in List.values(token_approved_listeners)){
+                thisEvent.1(thisNotification, transaction_id);
+              };
+            };
+            case (null) {};
+          };
         }      
       };
 
@@ -1693,7 +1905,7 @@ module {
           memo = transferFromArgs.memo;
         };
 
-        let(finaltx, finaltxtop, notification) : (Value, ?Value, TransferFromNotification) = switch(environment.can_transfer_from){
+        let(_finaltx, _finaltxtop, notification) : (Value, ?Value, TransferFromNotification) = switch(environment.can_transfer_from){
           case(null){
             (txMap, ?txTopMap, preNotification);
           };
@@ -1712,7 +1924,7 @@ module {
         from_subaccount = notification.from.subaccount} : ICRC7.TransferArg, trx, trxtop, notification.token_id) else
         return #ok(#Err(#GenericError({error_code = 2345; message = "unreachable null transaction"}))); 
 
-        let trxresult = switch(transaction_result){
+        let _trxresult = switch(transaction_result){
           case(#Ok(transaction_id)){
             for(thisEvent in List.values(transfer_from_listeners)){
               thisEvent.1(notification, transaction_id);
@@ -1771,7 +1983,7 @@ module {
         };
 
         //test that the memo is not too large
-        let ?(memo) = testMemo(thisItem.memo) else {
+        let ?(_memo) = testMemo(thisItem.memo) else {
           List.add(results, ?#Err(#GenericError({message = "invalid memo. must be less than " # debug_show(environment.icrc7.get_ledger_info().max_memo_size) # " bits"; error_code=222})));
           continue proc;
         };
@@ -1779,12 +1991,12 @@ module {
         
         //make sure the approval is not too old or too far in the future
         switch(testCreatedAt(thisItem.created_at_time, environment)){
-          case(#ok(val)) {};
+          case(#ok(_val)) {};
           case(#Err(#TooOld)){
             List.add(results,?#Err(#TooOld));
             continue proc;
           };
-          case(#Err(#InTheFuture(val))) {
+          case(#Err(#InTheFuture(_val))) {
             List.add(results, ?#Err(#CreatedInFuture({ledger_time = Nat64.fromNat(Int.abs(Time.now()))})));
             continue proc;
           };

@@ -1,6 +1,7 @@
 import ICRC37 "../src";
 import Service "../src/service";
 import ICRC7 "../../icrc7.mo/src";
+import Interface "../src/Interface";
 import Principal "mo:base/Principal";
 import CandyTypesLib "mo:candy/types";
 import CandyConv  "mo:candy/conversion";
@@ -28,11 +29,11 @@ let testOwnerAccount = {
 };
 let testCanister = Principal.fromText("p75el-ys2la-2xa6n-unek2-gtnwo-7zklx-25vdp-uepyz-qhdg7-pt2fi-bqe");
 
-let spender1 : ICRC7.Account = {owner = Principal.fromText("2dzql-vc5j3-p5nyh-vidom-fhtyt-edvv6-bqewt-j63fn-ovwug-h67hb-yqe"); subaccount = ?Blob.fromArray([1,2])};
-let spender2 : ICRC7.Account = {owner = Principal.fromText("32fn4-qqaaa-aaaak-ad65a-cai"); subaccount = ?Blob.fromArray([3,4])};
-let spender3 : ICRC7.Account = {owner = Principal.fromText("zfcdd-tqaaa-aaaaq-aaaga-cai"); subaccount = ?Blob.fromArray([5,6])};
-let spender4 : ICRC7.Account = {owner = Principal.fromText("x33ed-h457x-bsgyx-oqxqf-6pzwv-wkhzr-rm2j3-npodi-purzm-n66cg-gae"); subaccount = ?Blob.fromArray([7,8])};
-let spender5 : ICRC7.Account = {owner = Principal.fromText("dtnbn-kyaaa-aaaak-aeigq-cai"); subaccount = ?Blob.fromArray([9,10])};
+let spender1 : ICRC7.Account = {owner = Principal.fromText("2dzql-vc5j3-p5nyh-vidom-fhtyt-edvv6-bqewt-j63fn-ovwug-h67hb-yqe"); subaccount = ?Blob.fromArray([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2])};
+let spender2 : ICRC7.Account = {owner = Principal.fromText("32fn4-qqaaa-aaaak-ad65a-cai"); subaccount = ?Blob.fromArray([3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4])};
+let spender3 : ICRC7.Account = {owner = Principal.fromText("zfcdd-tqaaa-aaaaq-aaaga-cai"); subaccount = ?Blob.fromArray([5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6])};
+let spender4 : ICRC7.Account = {owner = Principal.fromText("x33ed-h457x-bsgyx-oqxqf-6pzwv-wkhzr-rm2j3-npodi-purzm-n66cg-gae"); subaccount = ?Blob.fromArray([7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8])};
+let spender5 : ICRC7.Account = {owner = Principal.fromText("dtnbn-kyaaa-aaaak-aeigq-cai"); subaccount = ?Blob.fromArray([9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10])};
 
 let baseCollection = {
   symbol = ?"anft";
@@ -219,6 +220,91 @@ testsys<system>("ICRC7 contract initializes with correct default state", func<sy
   assert(icrc37.get_ledger_info().max_revoke_approvals == 106);
   assert(icrc37.get_ledger_info().max_approvals == 500);
   assert(icrc37.get_ledger_info().settle_to_approvals == 450);
+});
+
+testsys<system>("approve_tokens runtime hooks can rewrite request arguments", func<system>() {
+  let icrc7 = getICRC7Class<system>(?baseCollection);
+  let icrc37 = getICRC37Class<system>(?base37Collection, icrc7);
+
+  ignore icrc7.set_nfts<system>(testOwner, [{
+    token_id = 1;
+    override = true;
+    metadata = baseNFT;
+    owner = ?testOwnerAccount;
+    memo = null;
+    created_at_time = null;
+  }], false);
+
+  let originalSpender : Service.Account = { owner = testCanister; subaccount = null };
+  let rewrittenSpender : Service.Account = { owner = spender1.owner; subaccount = null };
+
+  icrc37.set_interface_handlers({
+    Interface.defaultHandlers with
+    beforeApproveTokens = ?(func(_caller, request) {
+      switch (request) {
+        case (#approve_tokens(args)) {
+          #ok(#approve_tokens(Array.map<Service.ApproveTokenArg, Service.ApproveTokenArg>(args, func(arg) {
+            {
+              token_id = arg.token_id;
+              approval_info = {
+                from_subaccount = arg.approval_info.from_subaccount;
+                spender = rewrittenSpender;
+                memo = arg.approval_info.memo;
+                expires_at = arg.approval_info.expires_at;
+                created_at_time = arg.approval_info.created_at_time;
+              };
+            };
+          })));
+        };
+        case (_) #err({ error_code = 99; message = "unexpected request" });
+      };
+    });
+  });
+
+  let result = icrc37.approve_tokens<system>(testOwner, [{
+    token_id = 1;
+    approval_info = {
+      memo = null;
+      expires_at = null;
+      created_at_time = ?init_time;
+      from_subaccount = null;
+      spender = originalSpender;
+    };
+  }]);
+
+  let ?#Ok(_) = result[0] else return assert(false);
+
+  assert(icrc37.is_approved_with_caller(testOwner, [{
+    spender = rewrittenSpender;
+    from_subaccount = null;
+    token_id = 1;
+  }])[0]);
+  assert(not icrc37.is_approved_with_caller(testOwner, [{
+    spender = originalSpender;
+    from_subaccount = null;
+    token_id = 1;
+  }])[0]);
+});
+
+testsys<system>("is_approved runtime after hook can rewrite response", func<system>() {
+  let icrc7 = getICRC7Class<system>(?baseCollection);
+  let icrc37 = getICRC37Class<system>(?base37Collection, icrc7);
+
+  icrc37.set_interface_handlers({
+    Interface.defaultHandlers with
+    afterIsApproved = ?(func(_caller, _request, _result) {
+      #ok(#is_approved([true]));
+    });
+  });
+
+  let result = icrc37.is_approved_with_caller(testOwner, [{
+    spender = { owner = testCanister; subaccount = null };
+    from_subaccount = null;
+    token_id = 999;
+  }]);
+
+  assert(result.size() == 1);
+  assert(result[0]);
 });
 
 testsys<system>("Approve another account for a set of token transfers", func<system>() {
@@ -774,7 +860,7 @@ testsys<system>("Transfer a token to another account after collection approval",
 
   assert(icrc37.is_approved([{spender; from_subaccount = null; token_id = 0;}])[0]);
 
-  assert(not icrc37.is_approved([{spender; from_subaccount = ?Blob.fromArray([1]); token_id = 0;}])[0]);
+  assert(not icrc37.is_approved([{spender; from_subaccount = ?Blob.fromArray([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); token_id = 0;}])[0]);
 
   // ACT: Initiate the transfer of the approved token
   let #ok(transferResponse) = icrc37.transfer<system>(spender.owner, transferArgs) else return assert(false);
@@ -981,7 +1067,7 @@ testsys<system>("Transfer a token to another account after collection approval",
 
   assert(icrc37.is_approved([{spender; from_subaccount = null; token_id = 1;}])[0]);
 
-  assert(not icrc37.is_approved([{spender; from_subaccount = ?Blob.fromArray([1]); token_id = 1;}])[0]);
+  assert(not icrc37.is_approved([{spender; from_subaccount = ?Blob.fromArray([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); token_id = 1;}])[0]);
 
   // ACT: Initiate the transfer of the approved token
   let #ok(transferResponse) = icrc37.transfer(spender.owner, transferArgs) else return assert(false);
