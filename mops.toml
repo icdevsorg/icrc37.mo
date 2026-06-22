@@ -2,7 +2,7 @@
 name = "icrc37-mo"
 version = "0.5.1"
 description = "icrc37 for motoko"
-repository = "https://github.com/PanIndustrial-Org/icrc37.mo"
+repository = "https://github.com/icdevsorg/icrc37.mo"
 keywords = [ "nft" ]
 license = "MIT"
 

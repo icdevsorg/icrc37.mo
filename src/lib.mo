@@ -883,9 +883,9 @@ module {
     
       let toDelete = List.empty<((?Nat, Account), ApprovalInfo)>();
       var current_size = Map.size(state.token_approvals);
-      for (thisItem in Map.entries<(?Nat, Account), ApprovalInfo>(state.token_approvals)) {
+      label reduce for (thisItem in Map.entries<(?Nat, Account), ApprovalInfo>(state.token_approvals)) {
         if (current_size <= remaining) {
-           break;
+           break reduce;
         };
         List.add(toDelete, thisItem);
         current_size -= 1;
