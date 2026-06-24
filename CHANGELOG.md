@@ -1,5 +1,11 @@
 #Changelog
 
+## v0.6.0
+
+- Added mixin
+- Updated to core
+- Added ICRC-85
+
 ## v0.5.1
 
 Fix Import Error
