@@ -1,6 +1,6 @@
 [package]
 name = "icrc37-mo"
-version = "0.5.1"
+version = "0.6.0"
 description = "icrc37 for motoko"
 repository = "https://github.com/icdevsorg/icrc37.mo"
 keywords = [ "nft" ]
@@ -8,10 +8,10 @@ license = "MIT"
 
 [dependencies]
 base = "0.16.0"
-core = "2.1.0"
+core = "2.5.0"
 candy = "0.3.1"
 rep-indy-hash = "0.1.1"
-icrc7-mo = "../icrc7.mo"
+icrc7-mo = "0.6.0"
 class-plus = "0.2.1"
 
 [dev-dependencies]
@@ -20,4 +20,4 @@ fuzz = "1.0.0"
 matchers = "2.1.0"
 
 [toolchain]
-moc = "1.3.0"
+moc = "1.9.0"
