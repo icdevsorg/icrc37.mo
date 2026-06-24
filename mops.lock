@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "mopsTomlDepsHash": "bb363d18e428d3e7bc359f91cb0b255024a68889cf6c47fcb18424f827976148",
+  "mopsTomlDepsHash": "c24a6fb32146288e4885da649f321f8190d40c73e5b3afa83e5a08add5a6e036",
   "deps": {
     "base": "0.16.0",
     "core": "2.5.0",
@@ -23,7 +23,7 @@
     "sha2": "0.0.4",
     "encoding": "https://github.com/aviate-labs/encoding.mo#v0.4.1@2711d18727e954b11afc0d37945608512b5fbce2",
     "motoko_numbers": "https://github.com/edjCase/motoko_numbers#v1.1.0@773953141f976ccdfc2e6a2c451b841a53bb39a0",
-    "icrc7-mo": "/Users/afat/Dropbox/development/PanIndustrial/code/icrc7.mo",
+    "icrc7-mo": "0.6.0",
     "ovs-fixed": "0.2.2",
     "star": "0.1.1",
     "timer-tool": "0.2.1",
@@ -200,6 +200,26 @@
       "sha2@0.0.4/mops.toml": "0287fc13396259bb149d150f98094c4ed2f81808aff8589a7653536de2f469c8",
       "sha2@0.0.4/src/Sha256.mo": "c5df7faf99eae4138c40bca49e3e877c10933561807efb4bc769f777a0fd5cca",
       "sha2@0.0.4/src/Sha512.mo": "274fe6abed773445b573e515302bb05a9e2da126af25a55ef6244c9ab9e200c2"
+    },
+    "icrc7-mo@0.6.0": {
+      "icrc7-mo@0.6.0/README.md": "506f3144b32df9eb81bef0121ca67e53d46bfa9cd08680dba40a8dea15bb116e",
+      "icrc7-mo@0.6.0/src/Inspect.mo": "5278e20c70e5a03a31ee3077fcd3d34531cc2ea23fd07c0fe9806522f0aec4dd",
+      "icrc7-mo@0.6.0/src/Interface.mo": "d1a199a842a22e49769d796dc90beac57722731326959dfde348e260455c4f41",
+      "icrc7-mo@0.6.0/LICENSE": "32db0c1689c0a01f7a11d3c0c3778c67ac8a02b25a848d8800d09685261466fc",
+      "icrc7-mo@0.6.0/mops.toml": "c8ab0c835492094ba2aa868805e4329bb11affe8b31d34494b30e7831b04c383",
+      "icrc7-mo@0.6.0/example/main.mo": "7aed6f4c4c285ad6948f90f6377bcf511e7bee55e526562714f19f1f3a3f421e",
+      "icrc7-mo@0.6.0/test_event.mo": "f7c1e8822819524d2ed17e94fdb0d8b96ba76ac2faf8b48b9cbf8a5077f6c34a",
+      "icrc7-mo@0.6.0/src/lib.mo": "5f0d9d71e69a632b10f6ef1a026f9a242115c5f54394b560483defe64e8d45b3",
+      "icrc7-mo@0.6.0/src/mixin.mo": "ef2e6cdbb004b392fb87bc237e70dadafeaf25253dc517a9af89c7c59abcdcfb",
+      "icrc7-mo@0.6.0/src/openvaluesharing.mo": "f131ba9701206dee71bb17309781d4c489a4304bb0969aceada8baa8cc1149ca",
+      "icrc7-mo@0.6.0/src/migrations/types.mo": "72cf5878b392134bdee4afc908adeca0875d404b8a5b088e36e17c8ae6fbe458",
+      "icrc7-mo@0.6.0/src/migrations/v000_000_000/lib.mo": "8cd7a23e7e9f01f0953b33b2dde175cc3a9d643cf595082edab012f4a8bc936b",
+      "icrc7-mo@0.6.0/src/mixin_temp2.mo": "0d25d4c0d450b37868a9e97da6f28d0030008a24601bf76dc8b382e4d588a1d7",
+      "icrc7-mo@0.6.0/src/migrations/lib.mo": "fec4dae702dfb6e5d7dbd0e038279ac039121b5d19a26ae4bb3246755831768b",
+      "icrc7-mo@0.6.0/src/service.mo": "f579a22125d5d4d6fd4f164535d79ab64d419c482611c4e1832a8ee75ba2ef0f",
+      "icrc7-mo@0.6.0/src/migrations/v000_000_000/types.mo": "28428a053891813ceddb91fe97b9211eb820f3f78e379243f76dfe93a8f4548f",
+      "icrc7-mo@0.6.0/src/migrations/v000_001_000/lib.mo": "d19d4d4bf10be35a3430b6368c7713263b4cc0ace46f05b6143fe5a7cb7bfe57",
+      "icrc7-mo@0.6.0/src/migrations/v000_001_000/types.mo": "7869b7a4e5fd3f55b24a88be52c5dee790ffaa84f345aabaf9ff665bcff281b8"
     },
     "ovs-fixed@0.2.2": {
       "ovs-fixed@0.2.2/mops.toml": "5223fe7108ceabe4acbcee69d3303bf50036efa950d0123633703bbe3f3adcc9",
